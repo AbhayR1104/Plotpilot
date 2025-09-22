@@ -127,16 +127,56 @@ def generate_bubble_chart(df):
 
 def generate_pie_chart(df):
     st.subheader("3. Options for: Pie Chart")
-    categorical_columns = list(df.select_dtypes(['object', 'category']).columns)
+    categorical_columns = list(df.select_dtypes(['object', 'category', 'string']).columns)
     numeric_columns = list(df.select_dtypes(['float', 'int']).columns)
     
     names_col = st.selectbox("Select the column for labels (categorical)", categorical_columns, key="pie_names")
     values_col = st.selectbox("Select the column for values (numeric)", numeric_columns, key="pie_values")
     
+    # --- NEW: TOP N SLICES WIDGET ---
+    top_n = st.number_input("Number of top slices to show", min_value=2, max_value=50, value=10, 
+                            help="The rest will be grouped into an 'Others' slice.")
+    
     if st.button(f"Generate Plot"):
-        fig = px.pie(df, names=names_col, values=values_col, title=f"Proportion of {values_col} by {names_col}")
+        # Aggregate data in case categories are repeated
+        agg_df = df.groupby(names_col)[values_col].sum().reset_index()
+        agg_df = agg_df.sort_values(by=values_col, ascending=False)
+
+        # If there are more categories than top_n, group the rest
+        if len(agg_df) > top_n:
+            df_top = agg_df.head(top_n)
+            others_sum = agg_df.iloc[top_n:][values_col].sum()
+            
+            # Create the 'Others' row as a new DataFrame
+            df_others = pd.DataFrame([{names_col: 'Others', values_col: others_sum}])
+            
+            # Combine the top N with the 'Others' row
+            df_for_plot = pd.concat([df_top, df_others], ignore_index=True)
+            title = f"Top {top_n} Proportions of {values_col} by {names_col}"
+        else:
+            df_for_plot = agg_df
+            title = f"Proportion of {values_col} by {names_col}"
+
+        fig = px.pie(df_for_plot, names=names_col, values=values_col, title=title)
         st.plotly_chart(fig, use_container_width=True)
-        code_string = f"fig = px.pie(df, names='{names_col}', values='{values_col}')\nfig.show()"
+        
+        # The generated code will be more complex to reflect this logic
+        code_string = f"""
+# First, aggregate and sort the data
+agg_df = df.groupby('{names_col}')['{values_col}'].sum().reset_index()
+agg_df = agg_df.sort_values(by='{values_col}', ascending=False)
+
+top_n = {top_n}
+if len(agg_df) > top_n:
+    df_top = agg_df.head(top_n)
+    others_sum = agg_df.iloc[top_n:]['{values_col}'].sum()
+    df_others = pd.DataFrame([{{'{names_col}': 'Others', '{values_col}': others_sum}}])
+    df_for_plot = pd.concat([df_top, df_others], ignore_index=True)
+else:
+    df_for_plot = agg_df
+
+fig = px.pie(df_for_plot, names='{names_col}', values='{values_col}')
+fig.show()"""
         st.code(code_string, language='python')
 
 def generate_dot_plot(df):
